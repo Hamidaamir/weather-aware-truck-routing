@@ -1,10 +1,42 @@
-node_modules/
-backend/.venv/
-backend/db.sqlite3
-backend/.env
-frontend/.env
-frontend/dist/
-frontend/coverage/
+# Local environment files and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python environments, bytecode, and test output
+.venv/
+venv/
+**/.venv/
+**/venv/
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local database files
+backend/db.sqlite3
+backend/db.sqlite3-*
+backend/staticfiles/
+
+# Frontend dependencies and generated output
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+
+# Generated logs and operating-system files
+*.log
+*.tmp
+*.temp
 .DS_Store
+Thumbs.db
+
+# Local editor settings
+.vscode/*
+!.vscode/extensions.json
+.idea/

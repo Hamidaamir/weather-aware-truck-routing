@@ -2,8 +2,15 @@ import type { LocationSuggestion, RoutePlanResponse } from '../types';
 
 const DEFAULT_API_BASE = 'http://localhost:8000/api';
 
+function getApiBaseUrl(): string {
+  const configuredBase = import.meta.env.VITE_API_BASE_URL;
+  if (configuredBase) return configuredBase;
+  if (import.meta.env.DEV) return DEFAULT_API_BASE;
+  throw new Error('VITE_API_BASE_URL must be configured for production.');
+}
+
 export async function searchLocations(query: string, signal?: AbortSignal): Promise<LocationSuggestion[]> {
-  const base = import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE;
+  const base = getApiBaseUrl();
   const params = new URLSearchParams({ q: query });
   const response = await fetch(`${base.replace(/\/$/, '')}/geocode/?${params}`, { signal });
   const data = await response.json().catch(() => ({}));
@@ -14,7 +21,7 @@ export async function searchLocations(query: string, signal?: AbortSignal): Prom
 }
 
 export async function submitRoutePlan(payload: Record<string, string | number>) {
-  const base = import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE;
+  const base = getApiBaseUrl();
   const started = performance.now();
   try {
     const response = await fetch(`${base.replace(/\/$/, '')}/route-plan/`, {

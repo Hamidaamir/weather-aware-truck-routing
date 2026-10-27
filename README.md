@@ -20,6 +20,7 @@ This application accepts an origin, destination, departure time, load weight, ch
 weather-aware-truck-routing/
 ├── README.md
 ├── .gitignore
+├── .python-version
 ├── backend/
 │   ├── .env.example
 │   ├── manage.py
@@ -42,7 +43,7 @@ weather-aware-truck-routing/
 Copy `backend/.env.example` to `backend/.env` and populate values.
 
 ```powershell
-Copy-Item .\backend\.env.example .\backend\.env
+if (-not (Test-Path .\backend\.env)) { Copy-Item .\backend\.env.example .\backend\.env }
 ```
 
 Required values:
@@ -59,24 +60,79 @@ Required values:
 Copy `frontend/.env.example` to `frontend/.env`.
 
 ```powershell
-Copy-Item .\frontend\.env.example .\frontend\.env
+if (-not (Test-Path .\frontend\.env)) { Copy-Item .\frontend\.env.example .\frontend\.env }
 ```
 
 Required value:
 
 - `VITE_API_BASE_URL=http://localhost:8000/api`
 
+## Deployment: Render and Vercel
+
+The backend is a stateless JSON API; route and weather results are computed per request. SQLite is used only for Django's default auth/admin tables and is not required for route planning. Render's free service filesystem is ephemeral, so do not rely on local SQLite to persist admin users or sessions across restarts. The Vite frontend is deployed separately and calls the backend using `VITE_API_BASE_URL`.
+
+### Deploy the backend to Render
+
+Create a **Web Service** from the GitHub repository with:
+
+- Root directory: `backend`
+- Runtime: Python
+- Build command: `pip install -r requirements.txt && python manage.py collectstatic --no-input`
+- Start command: `python -m gunicorn config.wsgi:application --bind 0.0.0.0:$PORT`
+
+The repository pins Python to the 3.13 series in `.python-version`. This avoids Render's newer default Python runtime, which may not be supported by all installed dependencies.
+The backend uses Django 5.2.18 (the supported LTS series) and Django REST Framework 3.18.3.
+
+Set these environment variables in Render (do not put production values in the repository):
+
+| Variable | Value |
+|---|---|
+| `DJANGO_SECRET_KEY` | Generate a unique secret in Render; keep it private |
+| `DEBUG` | `False` |
+| `ALLOWED_HOSTS` | The Render service hostname, without scheme or path, e.g. `your-service.onrender.com` |
+| `CORS_ALLOWED_ORIGINS` | The exact Vercel origin, including `https://`, added after Vercel creates it |
+| `ORS_API_KEY` | Your OpenRouteService key |
+| `ORS_TIMEOUT_SECONDS` | `15` (optional; this is the default) |
+| `OPEN_METEO_TIMEOUT_SECONDS` | `15` (optional; this is the default) |
+
+`whitenoise` serves Django's collected static assets, including the existing admin's CSS/JS, without a separate static-file service. The frontend itself is not served by Django. The build command collects those files; the WSGI start command runs the existing `config.wsgi:application`.
+Production redirects to HTTPS and sets a one-hour HSTS policy. HSTS subdomain and preload directives remain disabled because they require certainty about every affected hostname.
+
+### Deploy the frontend to Vercel
+
+Import the same GitHub repository as a separate Vercel project:
+
+- Root directory: `frontend`
+- Framework preset: Vite
+- Install command: `npm ci` (the repository includes `package-lock.json`)
+- Build command: `npm run build`
+- Output directory: `dist`
+- Environment variable: `VITE_API_BASE_URL=https://YOUR-RENDER-SERVICE.onrender.com/api`
+
+Replace the example host with the actual Render service URL. The Vite client uses the localhost API fallback only in development; a production build without `VITE_API_BASE_URL` fails with a clear configuration error rather than sending requests to localhost. The application does not use client-side routes, so a Vercel SPA rewrite is not needed.
+
+### Deployment order and CORS
+
+1. Deploy the Render backend with `ALLOWED_HOSTS` set to its Render hostname. Set `CORS_ALLOWED_ORIGINS` temporarily to an empty value if the Vercel URL is not known yet.
+2. Deploy Vercel with `VITE_API_BASE_URL` set to the Render API URL ending in `/api`.
+3. Copy the exact Vercel origin (scheme and hostname only, no path) into Render's `CORS_ALLOWED_ORIGINS`, then redeploy/restart the backend.
+4. Verify `GET https://YOUR-RENDER-SERVICE.onrender.com/api/health/` and test geocoding and route planning from the deployed frontend. Live provider checks require a valid ORS key and network access.
+
+Render's free service may sleep when idle and cold-start on the next request. No database or paid infrastructure is needed for the route-planning workflow.
+
 ## Windows PowerShell setup
 
 ### Backend
 
+Run from the repository root:
+
 ```powershell
-cd .\backend
-python -m venv .venv
+if (-not (Test-Path .\.venv\Scripts\python.exe)) { python -m venv .venv }
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -r requirements.txt
-Copy-Item .\.env.example .\.env
+python -m pip install -r .\backend\requirements.txt
+if (-not (Test-Path .\backend\.env)) { Copy-Item .\backend\.env.example .\backend\.env }
+Set-Location .\backend
 python manage.py check
 python manage.py test
 python manage.py runserver
@@ -94,7 +150,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```powershell
 cd .\frontend
 npm install
-Copy-Item .\.env.example .\.env
+if (-not (Test-Path .\.env)) { Copy-Item .\.env.example .\.env }
 npm run test
 npm run build
 npm run dev
@@ -105,8 +161,9 @@ npm run dev
 Backend:
 
 ```powershell
-cd .\backend
+cd "C:\path\to\Weather-Aware Truck Routing"
 .\.venv\Scripts\Activate.ps1
+Set-Location .\backend
 python manage.py runserver
 ```
 
