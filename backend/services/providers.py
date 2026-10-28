@@ -138,7 +138,9 @@ class ProviderMalformedResponseError(ProviderError):
 def _require_api_key() -> str:
     key = getattr(settings, 'ORS_API_KEY', '')
     if not key:
-        raise ProviderConfigError('OpenRouteService API key is missing. Set ORS_API_KEY in your backend .env file.')
+        raise ProviderConfigError(
+            'OpenRouteService API key is missing. Set ORS_API_KEY in the backend environment.'
+        )
     return key
 
 

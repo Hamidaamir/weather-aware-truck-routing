@@ -6,6 +6,7 @@ from django.test import SimpleTestCase, override_settings
 
 from services.providers import (
     ProviderAuthenticationError,
+    ProviderConfigError,
     ProviderError,
     ProviderMalformedResponseError,
     ProviderRateLimitError,
@@ -40,6 +41,17 @@ def geojson_route(distance=100000, duration=3600, coordinates=None):
 class RoutingProviderTests(SimpleTestCase):
     def setUp(self):
         cache.clear()
+
+    @override_settings(ORS_API_KEY='')
+    @patch('services.providers._http_session')
+    def test_missing_api_key_returns_clear_configuration_error(self, session_mock):
+        with self.assertRaisesRegex(
+            ProviderConfigError,
+            'OpenRouteService API key is missing. Set ORS_API_KEY in the backend environment.',
+        ):
+            build_route_geometry((32.7, -96.8), (31.8, -106.49))
+
+        session_mock.assert_not_called()
 
     @override_settings(ORS_API_KEY='server-only-test-key', ORS_TIMEOUT_SECONDS=7)
     @patch('services.providers._http_session')

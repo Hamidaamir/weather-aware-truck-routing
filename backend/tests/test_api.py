@@ -102,6 +102,7 @@ class ApiTests(SimpleTestCase):
             'forecast_offset_hours': 0,
         }, format='json')
         self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()['message'], 'API key missing')
 
     def test_route_plan_provider_failures_have_recoverable_statuses(self):
         from services.providers import (
