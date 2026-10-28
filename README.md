@@ -67,58 +67,53 @@ Required value:
 
 - `VITE_API_BASE_URL=http://localhost:8000/api`
 
-## Deployment: Render and Vercel
+## Deployment: PythonAnywhere and Vercel
 
-The backend is a stateless JSON API; route and weather results are computed per request. SQLite is used only for Django's default auth/admin tables and is not required for route planning. Render's free service filesystem is ephemeral, so do not rely on local SQLite to persist admin users or sessions across restarts. The Vite frontend is deployed separately and calls the backend using `VITE_API_BASE_URL`.
+The deployed frontend is hosted on Vercel at `https://weather-aware-truck-routing-orcin.vercel.app/`, and the Django API is hosted on PythonAnywhere at `https://hamidaamir.pythonanywhere.com/`. The frontend calls `https://hamidaamir.pythonanywhere.com/api` through `VITE_API_BASE_URL`. The backend is a stateless JSON API; route and weather results are computed per request. SQLite is used only for Django's default auth/admin tables and is not required for route planning.
 
-### Deploy the backend to Render
+### PythonAnywhere backend configuration
 
-Create a **Web Service** from the GitHub repository with:
+The PythonAnywhere web app uses:
 
-- Root directory: `backend`
-- Runtime: Python
-- Build command: `pip install -r requirements.txt && python manage.py collectstatic --no-input`
-- Start command: `python -m gunicorn config.wsgi:application --bind 0.0.0.0:$PORT`
+- Project/backend directory: `/home/hamidaamir/weather-aware-truck-routing/backend`
+- Virtual environment: `/home/hamidaamir/.virtualenvs/weather-routing-venv`
+- Django settings module: `config.settings`
+- Allowed host: `hamidaamir.pythonanywhere.com`
+- `DEBUG=False`
 
-The repository pins Python to the 3.13 series in `.python-version`. This avoids Render's newer default Python runtime, which may not be supported by all installed dependencies.
-The backend uses Django 5.2.18 (the supported LTS series) and Django REST Framework 3.18.3.
+The settings use `python-dotenv` to load `backend/.env` when present, then read configuration from the process environment. A process environment variable takes precedence over the `.env` value. The local `.env` is ignored by Git and is not uploaded with the repository.
 
-Set these environment variables in Render (do not put production values in the repository):
+To configure the OpenRouteService key on PythonAnywhere, create a private `.env` file in the backend directory using the PythonAnywhere Files page or a server-side editor. Put the key in the file as `ORS_API_KEY=...`; do not put it in tracked code, the WSGI file, or a frontend environment variable. Restrict its permissions from a PythonAnywhere Bash console:
+
+```bash
+chmod 600 /home/hamidaamir/weather-aware-truck-routing/backend/.env
+```
+
+Set these production values in the same private backend `.env` file, or supply them through the server process environment if you already manage that securely:
 
 | Variable | Value |
 |---|---|
-| `DJANGO_SECRET_KEY` | Generate a unique secret in Render; keep it private |
+| `DJANGO_SECRET_KEY` | A private, strong Django secret |
 | `DEBUG` | `False` |
-| `ALLOWED_HOSTS` | The Render service hostname, without scheme or path, e.g. `your-service.onrender.com` |
-| `CORS_ALLOWED_ORIGINS` | The exact Vercel origin, including `https://`, added after Vercel creates it |
-| `ORS_API_KEY` | Your OpenRouteService key |
+| `ALLOWED_HOSTS` | `hamidaamir.pythonanywhere.com` |
+| `CORS_ALLOWED_ORIGINS` | `https://weather-aware-truck-routing-orcin.vercel.app` |
+| `ORS_API_KEY` | Your private OpenRouteService key |
 | `ORS_TIMEOUT_SECONDS` | `15` (optional; this is the default) |
 | `OPEN_METEO_TIMEOUT_SECONDS` | `15` (optional; this is the default) |
 
-`whitenoise` serves Django's collected static assets, including the existing admin's CSS/JS, without a separate static-file service. The frontend itself is not served by Django. The build command collects those files; the WSGI start command runs the existing `config.wsgi:application`.
-Production redirects to HTTPS and sets a one-hour HSTS policy. HSTS subdomain and preload directives remain disabled because they require certainty about every affected hostname.
+Use the existing PythonAnywhere WSGI configuration to point at the backend directory, activate the specified virtual environment, and set `DJANGO_SETTINGS_MODULE` to `config.settings`; do not add secrets to the WSGI file. After changing code, environment values, or `.env`, click **Reload** for the web app in PythonAnywhere's **Web** tab. Verify `https://hamidaamir.pythonanywhere.com/api/health/`, then test geocoding and route planning. The API returns a clear HTTP 503 configuration error if `ORS_API_KEY` is genuinely missing.
 
-### Deploy the frontend to Vercel
+The backend uses Django 5.2.18 LTS and Django REST Framework 3.18.3. Static files are configured with WhiteNoise and `collectstatic`; the frontend itself is not served by Django. The repository's `.python-version` is for services such as Render; PythonAnywhere uses the interpreter selected for its virtual environment.
 
-Import the same GitHub repository as a separate Vercel project:
+### Vercel frontend configuration
 
-- Root directory: `frontend`
-- Framework preset: Vite
-- Install command: `npm ci` (the repository includes `package-lock.json`)
-- Build command: `npm run build`
-- Output directory: `dist`
-- Environment variable: `VITE_API_BASE_URL=https://YOUR-RENDER-SERVICE.onrender.com/api`
+Configure the Vercel project with root directory `frontend`, Vite framework preset, install command `npm ci`, build command `npm run build`, and output directory `dist`. Set this environment variable for the production deployment:
 
-Replace the example host with the actual Render service URL. The Vite client uses the localhost API fallback only in development; a production build without `VITE_API_BASE_URL` fails with a clear configuration error rather than sending requests to localhost. The application does not use client-side routes, so a Vercel SPA rewrite is not needed.
+```text
+VITE_API_BASE_URL=https://hamidaamir.pythonanywhere.com/api
+```
 
-### Deployment order and CORS
-
-1. Deploy the Render backend with `ALLOWED_HOSTS` set to its Render hostname. Set `CORS_ALLOWED_ORIGINS` temporarily to an empty value if the Vercel URL is not known yet.
-2. Deploy Vercel with `VITE_API_BASE_URL` set to the Render API URL ending in `/api`.
-3. Copy the exact Vercel origin (scheme and hostname only, no path) into Render's `CORS_ALLOWED_ORIGINS`, then redeploy/restart the backend.
-4. Verify `GET https://YOUR-RENDER-SERVICE.onrender.com/api/health/` and test geocoding and route planning from the deployed frontend. Live provider checks require a valid ORS key and network access.
-
-Render's free service may sleep when idle and cold-start on the next request. No database or paid infrastructure is needed for the route-planning workflow.
+Redeploy the frontend after changing its environment variables or source. The Vite client uses the localhost API fallback only in development; a production build without `VITE_API_BASE_URL` fails clearly rather than sending requests to localhost. The application does not use client-side routes, so a Vercel SPA rewrite is not needed.
 
 ## Windows PowerShell setup
 
@@ -238,11 +233,11 @@ cd .\backend
 python benchmark_route_plan.py --runs 5
 ```
 
-Measured Dallas–El Paso route before and after the changes, using the same backend route-plan function inputs:
+Recorded live Dallas–El Paso observations before and after the optimization, using the same backend route-plan function inputs:
 
 | Measurement | Before | After |
 |---|---:|---:|
-| Backend route-plan elapsed | 46,796.7 ms | 4,749.4 ms |
+| Direct backend route-plan function elapsed | 46,796.7 ms | 4,749.4 ms |
 | Geocoding | 2 sequential calls (4,653 ms combined) | 2 parallel lookups (1,740 ms stage) |
 | Geometry/checkpoint generation | Not separately timed | 8.5 ms for 27 checkpoints |
 | Weather processing | 27 sequential calls (about 34.2 s combined) | 1 batch for 27 checkpoints (1,386 ms stage; one request took 1,380 ms) |
@@ -250,7 +245,7 @@ Measured Dallas–El Paso route before and after the changes, using the same bac
 | Risk and ranking | Not separately timed | 0.2 ms |
 | Total external provider requests | 32 | 5 |
 
-The original run spent most of its time waiting on one weather HTTP request per checkpoint. The optimized run was about 89.9% faster in these individual live observations; provider/network timing varies and this is not a service-level guarantee. A browser run after the change completed the frontend request/response path in 6,815 ms, including browser/network and JSON handling; there is no equivalent measured pre-change browser run to compare it against.
+The original run spent most of its time waiting on one weather HTTP request per checkpoint. The optimized direct function run was about 89.9% faster in these individual observations; provider/network timing varies and this is not a service-level guarantee. A separate browser run after the change completed the frontend request/response path in 6,815 ms, including browser/network and JSON handling; there is no equivalent measured pre-change browser run to compare it against.
 
 A separate live endpoint measurement returned HTTP 200 in 4,778.7 ms wall time. The instrumented view recorded 4,702.3 ms total before response return and 21.3 ms to construct/serialize JSON. Its stage/provider timings were also logged; they vary between requests.
 
@@ -347,6 +342,6 @@ npm run build
 ## Security notes
 
 - Never commit API keys or secret values.
-- Store secrets in local `.env` files only.
+- Keep development secrets in ignored local `.env` files. In production, configure secrets through the hosting platform's private environment settings or a private server-side `.env` file; neither belongs in Git.
 - Do not expose ORS credentials in frontend JavaScript.
 - Use explicit CORS origins and keep the backend configuration environment specific.
