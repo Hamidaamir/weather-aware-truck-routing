@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer } from 'react-leaflet';
+import { latLngBounds } from 'leaflet';
+import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
 import { AlertTriangle, Clock3, Gauge, LoaderCircle, MapPin, Route, ShieldAlert, Wind, Zap } from 'lucide-react';
 import { submitRoutePlan } from './api/client';
 import LocationAutocomplete from './components/LocationAutocomplete';
-import type { LocationSuggestion, RoutePlanResponse } from './types';
+import type { Coordinate, LocationSuggestion, RoutePlanResponse } from './types';
 
 type FormState = {
   origin: string;
@@ -43,6 +44,36 @@ function locationsMatch(first: LocationSuggestion | null, second: LocationSugges
     && Math.abs(first.lon - second.lon) < 0.0001;
 }
 
+function isValidCoordinate(coordinate: Coordinate | null | undefined): coordinate is Coordinate {
+  return coordinate !== null
+    && coordinate !== undefined
+    && Number.isFinite(coordinate.lat)
+    && Number.isFinite(coordinate.lon)
+    && coordinate.lat >= -90
+    && coordinate.lat <= 90
+    && coordinate.lon >= -180
+    && coordinate.lon <= 180;
+}
+
+function FitSelectedRoute({ geometry }: { geometry?: Coordinate[] }) {
+  const map = useMap();
+  const bounds = useMemo(() => {
+    if (!Array.isArray(geometry) || geometry.length === 0 || !geometry.every(isValidCoordinate)) {
+      return null;
+    }
+
+    return latLngBounds(geometry.map(({ lat, lon }) => [lat, lon]));
+  }, [geometry]);
+
+  useEffect(() => {
+    if (bounds?.isValid()) {
+      map.fitBounds(bounds, { padding: [32, 32], maxZoom: 8 });
+    }
+  }, [bounds, map]);
+
+  return null;
+}
+
 function App() {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [originLocation, setOriginLocation] = useState<LocationSuggestion | null>(null);
@@ -65,11 +96,12 @@ function App() {
   }, []);
 
   const mapCenter = useMemo(() => {
-    if (!visibleRoute || visibleRoute.geometry.length === 0) {
+    const geometry = visibleRoute?.geometry;
+    const firstCoordinate = Array.isArray(geometry) ? geometry.find(isValidCoordinate) : undefined;
+    if (!firstCoordinate) {
       return [32.7767, -96.797] as [number, number];
     }
-    const first = visibleRoute.geometry[0];
-    return [first.lat, first.lon] as [number, number];
+    return [firstCoordinate.lat, firstCoordinate.lon] as [number, number];
   }, [visibleRoute]);
 
   function updateField(field: string, value: string | number) {
@@ -290,8 +322,10 @@ function App() {
   }
 
   const selected = result.routes[selectedRouteIndex];
-  const routeCoordinates = selected?.geometry ?? [];
-  const routePoints: [number, number][] = routeCoordinates.map((coord) => [coord.lat, coord.lon] as [number, number]);
+  const routeCoordinates = Array.isArray(selected?.geometry) ? selected.geometry : [];
+  const routePoints: [number, number][] = routeCoordinates
+    .filter(isValidCoordinate)
+    .map(({ lat, lon }) => [lat, lon]);
   const hasNoTravel = selected?.has_confirmed_no_travel ?? false;
 
   return (
@@ -420,7 +454,8 @@ function App() {
               <div className="overflow-hidden rounded-2xl border border-slate-200">
                 <MapContainer center={mapCenter} zoom={6} style={{ height: '480px', width: '100%' }} scrollWheelZoom>
                   <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
-                  {routeCoordinates.length > 0 && (
+                  <FitSelectedRoute geometry={selected?.geometry} />
+                  {routePoints.length > 1 && (
                     <Polyline positions={routePoints} pathOptions={{ color: selected?.recommended ? '#0f172a' : '#475569', weight: 5 }} />
                   )}
                   {selected?.checkpoints?.map((checkpoint, index) => (
